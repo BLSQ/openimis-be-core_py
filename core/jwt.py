@@ -20,6 +20,7 @@ def on_token_issued(sender, request, user, **kwargs):
 
 
 def jwt_encode_user_key(payload, context=None):
+    print("Activated")
     token = jwt.encode(
         payload,
         get_jwt_key(encode=True, context=context, payload=payload),
@@ -58,6 +59,33 @@ def jwt_decode_user_key(token, context=None):
             key = get_jwt_key(encode=False)
     else:
         key = get_jwt_key(encode=False)
+    # if not_validated and not_validated.get("psp_username"):
+    #     print("validated2")
+    #     user_class = apps.get_model("mobile_payment", "PaymentServiceProvider")
+    #     db_user = user_class.objects\
+    #             .filter(psp_username=not_validated.get("psp_username")).first()
+    #     if db_user and db_user.private_key:
+    #         key = db_user.private_key
+    #         print(key)
+    #     else:
+    #         key = get_jwt_key(encode=False)
+    # else:
+    #     key = get_jwt_key(encode=False)
+    
+    # validated = jwt.decode(
+    #     token,
+    #     key,
+    #     options={
+    #         'verify_exp': jwt_settings.JWT_VERIFY_EXPIRATION,
+    #         'verify_aud': jwt_settings.JWT_AUDIENCE is not None,
+    #         'verify_signature': jwt_settings.JWT_VERIFY,
+    #     },
+    #     leeway=jwt_settings.JWT_LEEWAY,
+    #     audience=jwt_settings.JWT_AUDIENCE,
+    #     issuer=jwt_settings.JWT_ISSUER,
+    #     algorithms=[jwt_settings.JWT_ALGORITHM],
+    # )
+    # print (validated)
     return jwt.decode(
         token,
         key,
@@ -71,6 +99,9 @@ def jwt_decode_user_key(token, context=None):
         issuer=jwt_settings.JWT_ISSUER,
         algorithms=[jwt_settings.JWT_ALGORITHM],
     )
+
+    
+
 
 
 def get_jwt_key(encode=True, context=None, payload=None):
@@ -92,9 +123,13 @@ def get_jwt_key(encode=True, context=None, payload=None):
 def extract_private_key_from_payload(payload):
     # Get user private key from payload. This covers the refresh token mutation
     from core.models import User
+    from mobile_payment.models import PaymentServiceProvider
 
     if "username" in payload:
         return User.objects.get(username=payload["username"]).private_key
+    
+    if "psp_username" in payload:
+        return PaymentServiceProvider.objects.get(psp_username=payload["psp_username"]).private_key
 
 
 def extract_private_key_from_context(context):

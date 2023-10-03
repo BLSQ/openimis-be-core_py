@@ -245,6 +245,7 @@ class TechnicalUser(AbstractBaseUser):
     @property
     def id_for_audit(self):
         return -1
+    
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['password']
@@ -362,6 +363,10 @@ class InteractiveUser(VersionedModel):
     )
     role_id = models.IntegerField(db_column="RoleID", null=False)
 
+
+    def __str__(self):
+        return self.login_name
+
     @property
     def id_for_audit(self):
         return id
@@ -432,6 +437,16 @@ class InteractiveUser(VersionedModel):
         else:
             return False
 
+    @property
+    def is_imis_admin(self):
+        return Role.objects.filter(
+                is_system=64,
+                user_roles__user=self,
+                validity_to__isnull=True,
+                user_roles__validity_to__isnull=True,
+                user_roles__user__validity_to__isnull=True
+            ).exists()
+
     def set_password(self, raw_password):
         from hashlib import sha256
         from secrets import token_hex
@@ -493,21 +508,33 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
     officer = models.ForeignKey("Officer", on_delete=models.CASCADE, blank=True, null=True)
     claim_admin = models.ForeignKey("claim.ClaimAdmin", on_delete=models.CASCADE, blank=True, null=True)
-
+    
+ 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = []
 
     objects = UserManager()
 
+    def save_history(self, **kwargs):
+        # Prevent from saving history. It would lead to error due to username uniqueness.
+        pass
+
+    def delete_history(self, **kwargs):
+        from core import datetime
+        now = datetime.datetime.now()
+        self.validity_from = now
+        self.validity_to = now
+        self.save()
+
     @property
     def _u(self):
-        return self.i_user or self.officer or self.claim_admin or self.t_user
+        return self.i_user or self.officer or self.claim_admin or self.t_user 
 
     @property
     def id_for_audit(self):
@@ -538,6 +565,15 @@ class User(UUIDModel, PermissionsMixin):
         if self.user and self.user.t_user:
             return self.user.t_user.is_superuser
         return False
+
+    @property
+    def is_imis_admin(self):
+        # 64 is system number for IMIS Administrator
+        user = self._u
+        if isinstance(user, InteractiveUser):
+            return user.is_imis_admin
+        else:
+            return False
 
     @property
     def is_active(self):
@@ -649,8 +685,8 @@ class UserGroup(models.Model):
     group = models.ForeignKey(Group, models.DO_NOTHING)
 
     class Meta:
-        managed = True
-        db_table = 'Core_User_groups'
+        managed = False
+        db_table = 'core_User_groups'
         unique_together = (('user', 'group'),)
 
 
@@ -752,7 +788,7 @@ class Officer(VersionedModel, ExtendableModel):
         db_table = 'tblOfficer'
 
 
-class MutationLog(UUIDModel):
+class MutationLog(UUIDModel, ExtendableModel):
     """
     Maintains a log of every mutation requested along with its status. It is used to reply
     immediately to the client and have longer processing in the various backend modules.
@@ -1083,7 +1119,7 @@ class ExportableQueryModel(models.Model):
         for patch in patches:
             content = patch(content)
 
-        content.columns = column_names or values
+        content.columns = [column_names.get(column) or column for column in content.columns]
         filename = F"{uuid.uuid4()}.csv"
         content = ContentFile(content.to_csv(), filename)
         export = ExportableQueryModel(
