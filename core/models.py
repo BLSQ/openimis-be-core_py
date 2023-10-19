@@ -361,6 +361,9 @@ class InteractiveUser(VersionedModel):
         help_text="has a claim admin or enrolment officer account",
     )
     role_id = models.IntegerField(db_column="RoleID", null=False)
+    
+    def __str__(self):
+        return self.login_name
 
     @property
     def id_for_audit(self):
