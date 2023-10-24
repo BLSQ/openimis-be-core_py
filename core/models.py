@@ -13,7 +13,7 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q, DO_NOTHING, F, JSONField
 from django.utils.crypto import salted_hmac
 from graphql import ResolveInfo
@@ -503,7 +503,7 @@ class UserRole(VersionedModel):
         db_table = 'tblUserRole'
 
 
-class User(UUIDModel, PermissionsMixin):
+class User(UUIDModel, PermissionsMixin, UUIDVersionedModel):
     username = models.CharField(unique=True, max_length=CoreConfig.user_username_and_code_length_limit)
     t_user = models.ForeignKey(TechnicalUser, on_delete=models.CASCADE, blank=True, null=True)
     i_user = models.ForeignKey(InteractiveUser, on_delete=models.CASCADE, blank=True, null=True)
@@ -1113,3 +1113,22 @@ class ExportableQueryModel(models.Model):
         )
         export.save()
         return export
+
+
+class SpimmIDGenerator(models.Model):
+    uuid = models.UUIDField(db_column="UUID", primary_key=True, editable=False, default=uuid.uuid4)
+    hf = models.ForeignKey("location.HealthFacility", db_column="HF", on_delete=models.CASCADE)
+    next_insuree_id = models.IntegerField(db_column="NextInsuree", null=False, blank=False)
+    next_claim_id = models.IntegerField(db_column="NextClaim", null=False, blank=False)
+    current_year = models.SmallIntegerField(db_column="Year", blank=False, null=False)
+
+    class Meta:
+        managed = True
+        db_table = 'tblSpimmIDGenerator'
+
+    @transaction.atomic
+    def reset_for_current_year(self, current_year):
+        self.current_year = current_year
+        self.next_claim_id = 1
+        self.next_insuree_id = 1
+        self.save()

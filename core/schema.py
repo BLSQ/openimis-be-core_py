@@ -349,6 +349,9 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
+        for header in info.context.scope["headers"]:
+            if b'referer' in header:
+                logger.debug(f"***** request coming from {header[1]}")
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
@@ -1268,6 +1271,7 @@ def update_or_create_user(data, user):
     else:
         i_user, i_user_created = None, False
     if UT_OFFICER in data["user_types"]:
+        print(data)
         officer, officer_created = create_or_update_officer(
             user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
     else:
