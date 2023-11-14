@@ -349,9 +349,6 @@ class OrderedDjangoFilterConnectionField(DjangoFilterConnectionField):
     def resolve_queryset(
             cls, connection, iterable, info, args, filtering_args, filterset_class
     ):
-        for header in info.context.scope["headers"]:
-            if b'referer' in header:
-                logger.debug(f"***** request coming from {header[1]}")
         if not info.context.user.is_authenticated:
             raise PermissionDenied(_("unauthorized"))
         qs = super(DjangoFilterConnectionField, cls).resolve_queryset(
