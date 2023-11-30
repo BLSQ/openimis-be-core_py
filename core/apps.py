@@ -22,7 +22,7 @@ DEFAULT_CFG = {
     "shortstrfdate": "%d/%m/%Y",
     "longstrfdate": "%a %d %B %Y",
     "iso_raw_date": "False",
-    "age_of_majority": "18",
+    "age_of_majority": "5",
     "async_mutations": "False",
     "password_reset_template": "password_reset.txt",
     "currency": "$",
@@ -57,7 +57,7 @@ class CoreConfig(AppConfig):
     name = MODULE_NAME
     username_code_length = 8
     user_username_and_code_length_limit = 50
-    age_of_majority = 18
+    age_of_majority = 5
     password_reset_template = "password_reset.txt"
     gql_query_roles_perms = []
     gql_mutation_create_roles_perms = []
