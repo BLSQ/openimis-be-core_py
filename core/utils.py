@@ -1,5 +1,8 @@
+from django.conf import settings
+
 import core
 import graphene
+import os
 from django.db.models import Q
 from django.utils.translation import gettext as _
 import logging
@@ -280,3 +283,18 @@ def remove_role_right_for_system(system_role, right_id):
         logger.info("Role right removed for system role %s and right ID %s", system_role, right_id)
     else:
         logger.warning("Role right not found for system role %s and right ID %s", system_role, right_id)
+
+
+def get_nhia_logo():
+    nhia_logo_name = os.environ.get('REPORT_NHIA_LOGO_NAME', None)
+    if not nhia_logo_name:
+        logger.info(f"Report requested - No NHIA logo configured in the environment variables")
+        return None
+
+    full_image_path = f"{settings.STATIC_ROOT}/{nhia_logo_name}"
+    if not os.path.isfile(full_image_path):
+        logger.info(f"Report requested - there is no logo {nhia_logo_name} in the staticfiles directory")
+        return None
+
+    logo = open(full_image_path, "rb")
+    return logo
