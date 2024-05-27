@@ -1251,6 +1251,7 @@ def update_or_create_user(data, user):
     else:
         raise ValidationError(_("mutation.user_no_email_provided"))
 
+    data["username"] = data["username"].lower()
     username = data.get('username')
 
     if len(username) > CoreConfig.username_code_length:
