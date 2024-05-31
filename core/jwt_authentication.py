@@ -28,6 +28,8 @@ class JWTAuthentication(BaseAuthentication):
             user = get_user_by_token(token)
         except (jwt.PyJWTError, JSONWebTokenError) as exc:
             raise exceptions.AuthenticationFailed(str(exc)) from exc
+        if not user.i_user.can_login:
+            raise exceptions.AuthenticationFailed("Invalid user.")
 
         return user, None
 

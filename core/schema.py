@@ -37,6 +37,7 @@ from django.utils import translation
 from graphene.utils.str_converters import to_snake_case, to_camel_case
 from graphene_django.filter import DjangoFilterConnectionField
 import graphql_jwt
+from rest_framework import exceptions
 from typing import Optional, List, Dict, Any
 
 from .apps import CoreConfig
@@ -461,6 +462,7 @@ class Query(graphene.ObjectType):
         user_types=graphene.List(of_type=UserTypeEnum),
         language=graphene.String(),
         showHistory=graphene.Boolean(),
+        can_login=graphene.Boolean(),
         str=graphene.String(description="text search that will check username, last name, other names and email"),
         description="This interface provides access to the various types of users in openIMIS. The main resource"
                     "is limited to a username and refers either to a TechnicalUser or InteractiveUser. Only the latter"
@@ -631,7 +633,7 @@ class Query(graphene.ObjectType):
     def resolve_users(self, info, email=None, last_name=None, other_names=None, phone=None,
                       role_id=None, roles=None, health_facility_id=None, region_id=None,
                       district_id=None, municipality_id=None, birth_date_from=None, birth_date_to=None,
-                      user_types=None, language=None, village_id=None, region_ids=None, **kwargs):
+                      user_types=None, language=None, village_id=None, region_ids=None, can_login=None, **kwargs):
         if not info.context.user.has_perms(CoreConfig.gql_query_users_perms):
             raise PermissionError("Unauthorized")
 
@@ -679,6 +681,8 @@ class Query(graphene.ObjectType):
                                 Q(claim_admin__other_names__icontains=other_names))
         if language:
             user_filters.append(Q(i_user__language=language))
+        if can_login is not None:
+            user_filters.append(Q(i_user__can_login=can_login))
             # Language is not applicable to Office/ClaimAdmin
         if health_facility_id:
             user_filters.append(Q(i_user__health_facility_id=health_facility_id) |
@@ -1121,6 +1125,7 @@ class UserBase:
         required=False,
         description="List of role_ids, required for interactive users",
     )
+    can_login = graphene.Boolean(required=True, description="Is this user allowed to log into the system?")
 
     # Enrolment Officer / Feedback / Claim Admin specific
     birth_date = graphene.Date(required=False)
@@ -1268,16 +1273,19 @@ def update_or_create_user(data, user):
             user_uuid, data, user.id_for_audit, len(data["user_types"]) > 1)
     else:
         i_user, i_user_created = None, False
+
     if UT_OFFICER in data["user_types"]:
         officer, officer_created = create_or_update_officer(
             user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
     else:
         officer, officer_created = None, False
+
     if UT_CLAIM_ADMIN in data["user_types"]:
         claim_admin, claim_admin_created = create_or_update_claim_admin(
             user_uuid, data, user.id_for_audit, UT_INTERACTIVE in data["user_types"])
     else:
         claim_admin, claim_admin_created = None, False
+
     core_user, core_user_created = create_or_update_core_user(
         user_uuid=user_uuid, username=username, i_user=i_user, officer=officer, claim_admin=claim_admin)
 
@@ -1303,6 +1311,7 @@ def check_email_validity(email):
 def set_user_deleted(user):
     try:
         if user.i_user:
+            user.i_user.can_login = False
             user.i_user.delete_history()
         if user.t_user:
             user.t_user.delete_history()
@@ -1431,12 +1440,17 @@ class OpenimisObtainJSONWebToken(mixins.ResolveMixin, JSONWebTokenMutation):
     @classmethod
     def mutate(cls, root, info, **kwargs):
         username = kwargs.get("username")
-        # consider auto-provisioning
         if username:
-            # get_or_create will auto-provision from tblUsers if applicable
-            user = User.objects.get_or_create(username=username)
-            if user:
+            user = User.objects.filter(username=username,
+                                       validity_to__isnull=True,
+                                       i_user__isnull=False,
+                                       i_user__validity_to__isnull=True,
+                                       i_user__can_login=True)
+            if not user:
                 logger.debug("Authentication with %s failed and could not be fetched from tblUsers", username)
+                raise exceptions.AuthenticationFailed("Invalid credentials")
+
+            logger.debug("Authentication with %s was successful", username)
         return super().mutate(cls, info, **kwargs)
 
 

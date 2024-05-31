@@ -25,6 +25,7 @@ def create_or_update_interactive_user(user_id, data, audit_user_id, connected):
         "email": "email",
         "language": "language_id",
         "health_facility_id": "health_facility_id",
+        "can_login": "can_login",
     }
     data_subset = {v: data.get(k) for k, v in i_fields.items()}
     data_subset["audit_user_id"] = audit_user_id
