@@ -25,7 +25,7 @@ DEFAULT_CFG = {
     "age_of_majority": "18",
     "async_mutations": "False",
     "password_reset_template": "password_reset.txt",
-    "currency": "$",
+    "currency": "D",
     "gql_query_users_perms": ["121701"],
     "gql_mutation_create_users_perms": ["121702"],
     "gql_mutation_update_users_perms": ["121703"],
