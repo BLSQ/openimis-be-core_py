@@ -28,6 +28,7 @@ setup(
         'django-simple-history',
         'django-dirtyfields',
         'websocket-client'
+        'sqlalchemy',
     ],
     classifiers=[
         'Environment :: Web Environment',
