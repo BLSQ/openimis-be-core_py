@@ -394,6 +394,7 @@ REJECTION_REASONS = {
     17: "Item/Service cannot be covered within waiting period",
     18: "N/A",
     19: "Maximum number of antenatal contacts exceeded",
+    None: "Claim not submitted yet",
 }
 
 GENDERS = {
