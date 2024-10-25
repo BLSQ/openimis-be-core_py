@@ -439,6 +439,8 @@ PAGE_SIZE_FETCH_BILLS = 1000
 
 UNKNOWN = "Unknown"
 
+PATH_TO_POPULATION_FILE = "/home/ubuntu/openimis-one-gambia/openimis-be_py/openIMIS/population_export_to_superset.csv"
+
 
 def map_dtype(dtype) -> TypeEngine:
     """
@@ -580,8 +582,15 @@ def process_ecrvs_data(mapping_villages: dict,  superset_credentials: dict):
                                .order_by("id"))
     ips = set((InsureePolicy.objects.filter(validity_to__isnull=True, insuree__in=insurees).values_list("insuree_id", flat=True)))
 
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
-        writer = csv.writer(temp_file)
+    if os.path.exists(PATH_TO_POPULATION_FILE):
+        logger.info(f"Deleting previous population CSV file")
+        os.remove(PATH_TO_POPULATION_FILE)
+
+    # with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_file:
+    #     writer = csv.writer(temp_file)
+    #     writer.writerow(LABELS_FOR_ECRVS)  # Write header
+    with open(PATH_TO_POPULATION_FILE, mode='w', newline='') as file:
+        writer = csv.writer(file)
         writer.writerow(LABELS_FOR_ECRVS)  # Write header
 
         paginator = Paginator(insurees, PAGE_SIZE_FETCH_POPULATION)
@@ -604,14 +613,14 @@ def process_ecrvs_data(mapping_villages: dict,  superset_credentials: dict):
             writer.writerows(data)
 
         # Finishing writing to CSV
-        temp_file.flush()
-        temp_file.seek(0)
+        # file.flush()
+        # file.seek(0)
 
-        df = pd.read_csv(temp_file.name)
-        write_data_to_superset(df,
-                               SUPERSET_TABLE_POPULATION,
-                               credentials=superset_credentials)
-        logger.info(f"*** Enrollment data successfully uploaded! ***")
+    df = pd.read_csv(file.name)
+    write_data_to_superset(df,
+                           SUPERSET_TABLE_POPULATION,
+                           credentials=superset_credentials)
+    logger.info(f"*** Enrollment data successfully uploaded! ***")
 
 
 def process_enrollment_payment_data(mapping_hfs: dict, product_info: dict, superset_credentials: dict):
