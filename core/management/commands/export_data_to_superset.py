@@ -26,208 +26,6 @@ from product.models import Product
 
 logger = logging.getLogger(__name__)
 
-SQL_CLAIM_STATISTICS_QUERY_MSSQL = f"""
-SELECT
-  COUNT(tblClaim.ClaimID) AS 'Number of claims',
-  tblHf.HFName AS 'Hospital Name',
-  region_locations.LocationName AS 'Region',
-  district_locations.LocationName AS 'District',
-  CONVERT(DATE, tblClaim.DateClaimed) AS 'Date',
-  (CASE tblInsuree.Gender
-    WHEN 'M' THEN 'Male'
-    WHEN 'F' THEN 'Female'
-    ELSE 'Unknown'
-  END) AS Gender,
-  (CASE tblClaim.ClaimStatus
-    WHEN 1 THEN 'Rejected'
-    WHEN 2 THEN 'Entered'
-    WHEN 4 THEN 'Reviewed'
-    WHEN 8 THEN 'Approved'
-    WHEN 16 THEN 'Approved'
-    ELSE 'Unknown'
-  END) AS 'Status',
-  tblICDCodes.ICDName AS 'Diagnosis',
-  tblItems.ItemName AS 'Item',
-  tblServices.ServName AS 'Service',
-  SUM(COALESCE(tblClaimItems.RemuneratedAmount, 0))
-  + SUM(COALESCE(tblClaimServices.RemuneratedAmount, 0)) AS 'Total paid amount',
-  CASE
-    WHEN tblClaimItems.RejectionReason = -1 OR tblClaimServices.RejectionReason = -1 THEN 'Rejected by a medical officer'
-    WHEN tblClaim.RejectionReason = 0 OR tblClaimItems.RejectionReason = 0 OR tblClaimServices.RejectionReason = 0 THEN 'Accepted'
-    WHEN tblClaim.RejectionReason = 1 THEN 'Item/Service not in the registers of medical items/services'
-    WHEN tblClaimItems.RejectionReason = 1 THEN 'Item not in the registers of medical items'
-    WHEN tblClaimServices.RejectionReason = 1 THEN 'Service not in the registers of medical services'
-    WHEN tblClaimItems.RejectionReason = 2 THEN 'Item not in the pricelists associated with the health facility'
-    WHEN tblClaimServices.RejectionReason = 2 THEN 'Service not in the pricelists associated with the health facility'
-    WHEN tblClaimItems.RejectionReason = 3 THEN 'Item is not covered by an active policy of the patient'
-    WHEN tblClaimServices.RejectionReason = 3 THEN 'Service is not covered by an active policy of the patient'
-    WHEN tblClaimItems.RejectionReason = 4 THEN 'Item doesn\'t comply with limitations on patients (men/women, adults/children)'
-    WHEN tblClaimServices.RejectionReason = 4 THEN 'Service doesn\'t comply with limitations on patients (men/women, adults/children)'
-    WHEN tblClaimItems.RejectionReason = 5 THEN 'Item doesn\'t comply with frequency constraint'
-    WHEN tblClaimServices.RejectionReason = 5 THEN 'Service doesn\'t comply with frequency constraint'
-    WHEN tblClaimItems.RejectionReason = 6 THEN 'Item duplicated'
-    WHEN tblClaimServices.RejectionReason = 6 THEN 'Service duplicated'
-    WHEN tblClaimItems.RejectionReason = 7 OR tblClaimServices.RejectionReason = 7 THEN 'Not valid insurance number'
-    WHEN tblClaimItems.RejectionReason = 8 OR tblClaimServices.RejectionReason = 8 THEN 'Diagnosis code not in the current list of diagnoses'
-    WHEN tblClaimItems.RejectionReason = 9 OR tblClaimServices.RejectionReason = 9 THEN 'Target date of provision of health care invalid'
-    WHEN tblClaimItems.RejectionReason = 10 THEN 'Item doesn\'t comply with type of care constraint'
-    WHEN tblClaimServices.RejectionReason = 10 THEN 'Service doesn\'t comply with type of care constraint'
-    WHEN tblClaimItems.RejectionReason = 11 OR tblClaimServices.RejectionReason = 11 THEN 'Maximum number of in-patient admissions exceeded'
-    WHEN tblClaimItems.RejectionReason = 12 OR tblClaimServices.RejectionReason = 12 THEN 'Maximum number of out-patient visits exceeded'
-    WHEN tblClaimItems.RejectionReason = 13 OR tblClaimServices.RejectionReason = 13 THEN 'Maximum number of consultations exceeded'
-    WHEN tblClaimItems.RejectionReason = 14 OR tblClaimServices.RejectionReason = 14 THEN 'Maximum number of surgeries exceeded'
-    WHEN tblClaimItems.RejectionReason = 15 OR tblClaimServices.RejectionReason = 15 THEN 'Maximum number of deliveries exceeded'
-    WHEN tblClaimItems.RejectionReason = 16 OR tblClaimServices.RejectionReason = 16 THEN 'Maximum number of provisions of item/service exceeded'
-    WHEN tblClaimItems.RejectionReason = 17 THEN 'Item cannot be covered within waiting period'
-    WHEN tblClaimServices.RejectionReason = 17 THEN 'Service cannot be covered within waiting period'
-    WHEN tblClaimItems.RejectionReason = 18 OR tblClaimServices.RejectionReason = 18 THEN 'N/A'
-    WHEN tblClaimItems.RejectionReason = 19 OR tblClaimServices.RejectionReason = 19 THEN 'Maximum number of antenatal contacts exceeded'
-    ELSE 'Unknown'
-  END AS 'Rejection Reason',
-  CASE
-    WHEN tblClaim.RunID IS NOT NULL THEN 'Yes'
-    ELSE 'No'
-  END AS 'Paid'
-FROM tblClaim
-JOIN tblHF ON tblClaim.HfID = tblHF.HfID
-JOIN tblLocations AS district_locations ON tblHf.LocationId = district_locations.LocationId
-JOIN tblLocations AS region_locations ON district_locations.ParentLocationId = region_locations.LocationId
-JOIN tblInsuree ON tblClaim.InsureeID = tblInsuree.InsureeID
-JOIN tblICDCodes ON tblClaim.ICDID = tblICDCodes.ICDID
-LEFT JOIN tblClaimItems ON tblClaim.ClaimID = tblClaimItems.ClaimID
-LEFT JOIN tblClaimServices ON tblClaim.ClaimID = tblClaimServices.ClaimID
-LEFT JOIN tblItems ON tblClaimItems.ClaimItemID = tblItems.ItemID
-LEFT JOIN tblServices ON tblClaimServices.ServiceID = tblServices.ServiceID
-WHERE
-  district_locations.LocationType = 'D'
-  AND region_locations.LocationType = 'R'
-  AND tblClaim.validityTo IS NULL
-  AND tblHF.validityTo IS NULL
-  AND tblInsuree.validityTo IS NULL
-  AND tblICDCodes.validityTo IS NULL
-  AND tblClaimItems.validityTo IS NULL
-  AND tblClaimServices.validityTo IS NULL
-  AND district_locations.validityTo IS NULL
-  AND region_locations.validityTo IS NULL
-  AND tblItems.validityTo IS NULL
-  AND tblServices.validityTo IS NULL
-GROUP BY
-  region_locations.LocationName,
-  district_locations.LocationName,
-  tblHF.HFName,
-  tblClaim.DateClaimed, 
-  tblInsuree.Gender,
-  tblClaim.ClaimStatus,
-  tblICDCodes.ICDName,
-  tblClaimItems.RejectionReason,
-  tblClaimServices.RejectionReason,
-  tblClaim.RunID,
-  tblItems.ItemName,
-  tblServices.ServName,
-  tblClaim.RejectionReason
-"""
-
-SQL_CLAIM_STATISTICS_QUERY_POSTGRESQL = f"""
-SELECT
-  COUNT("tblClaim"."ClaimID") AS "Number of claims",
-  "tblHF"."HFName" AS "Hospital Name",
-  "region_locations"."LocationName" AS "Region",
-  "district_locations"."LocationName" AS "District",
-  CAST("tblClaim"."DateClaimed" AS date) AS "Date",
-  (CASE "tblInsuree"."Gender"
-    WHEN 'M' THEN 'Male'
-    WHEN 'F' THEN 'Female'
-    ELSE 'Unknown'
-  END) AS "Gender",
-  (CASE "tblClaim"."ClaimStatus"
-    WHEN 1 THEN 'Rejected'
-    WHEN 2 THEN 'Entered'
-    WHEN 4 THEN 'Reviewed'
-    WHEN 8 THEN 'Approved'
-    WHEN 16 THEN 'Approved'
-    ELSE 'Unknown'
-  END) AS "Status",
-  "tblICDCodes"."ICDName" AS "Diagnosis",
-  "tblItems"."ItemName" AS "Item",
-  "tblServices"."ServName" AS "Service",
-  SUM(COALESCE("tblClaimItems"."RemuneratedAmount", 0))
-  + SUM(COALESCE("tblClaimServices"."RemuneratedAmount", 0)) AS "Total paid amount",
-  CASE
-    WHEN "tblClaimItems"."RejectionReason" = -1 OR "tblClaimServices"."RejectionReason" = -1 THEN 'Rejected by a medical officer'
-    WHEN "tblClaim"."RejectionReason" = 0 OR "tblClaimItems"."RejectionReason" = 0 OR "tblClaimServices"."RejectionReason" = 0 THEN 'Accepted'
-    WHEN "tblClaim"."RejectionReason" = 1 THEN 'Item/Service not in the registers of medical items/services'
-    WHEN "tblClaimItems"."RejectionReason" = 1 THEN 'Item not in the registers of medical items'
-    WHEN "tblClaimServices"."RejectionReason" = 1 THEN 'Service not in the registers of medical services'
-    WHEN "tblClaimItems"."RejectionReason" = 2 THEN 'Item not in the pricelists associated with the health facility'
-    WHEN "tblClaimServices"."RejectionReason" = 2 THEN 'Service not in the pricelists associated with the health facility'
-    WHEN "tblClaimItems"."RejectionReason" = 3 THEN 'Item is not covered by an active policy of the patient'
-    WHEN "tblClaimServices"."RejectionReason" = 3 THEN 'Service is not covered by an active policy of the patient'
-    WHEN "tblClaimItems"."RejectionReason" = 4 THEN 'Item doesn\'t comply with limitations on patients (men/women, adults/children)'
-    WHEN "tblClaimServices"."RejectionReason" = 4 THEN 'Service doesn\'t comply with limitations on patients (men/women, adults/children)'
-    WHEN "tblClaimItems"."RejectionReason" = 5 THEN 'Item doesn\'t comply with frequency constraint'
-    WHEN "tblClaimServices"."RejectionReason" = 5 THEN 'Service doesn\'t comply with frequency constraint'
-    WHEN "tblClaimItems"."RejectionReason" = 6 THEN 'Item duplicated'
-    WHEN "tblClaimServices"."RejectionReason" = 6 THEN 'Service duplicated'
-    WHEN "tblClaimItems"."RejectionReason" = 7 OR "tblClaimServices"."RejectionReason" = 7 THEN 'Not valid insurance number'
-    WHEN "tblClaimItems"."RejectionReason" = 8 OR "tblClaimServices"."RejectionReason" = 8 THEN 'Diagnosis code not in the current list of diagnoses'
-    WHEN "tblClaimItems"."RejectionReason" = 9 OR "tblClaimServices"."RejectionReason" = 9 THEN 'Target date of provision of health care invalid'
-    WHEN "tblClaimItems"."RejectionReason" = 10 THEN 'Item doesn\'t comply with type of care constraint'
-    WHEN "tblClaimServices"."RejectionReason" = 10 THEN 'Service doesn\'t comply with type of care constraint'
-    WHEN "tblClaimItems"."RejectionReason" = 11 OR "tblClaimServices"."RejectionReason" = 11 THEN 'Maximum number of in-patient admissions exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 12 OR "tblClaimServices"."RejectionReason" = 12 THEN 'Maximum number of out-patient visits exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 13 OR "tblClaimServices"."RejectionReason" = 13 THEN 'Maximum number of consultations exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 14 OR "tblClaimServices"."RejectionReason" = 14 THEN 'Maximum number of surgeries exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 15 OR "tblClaimServices"."RejectionReason" = 15 THEN 'Maximum number of deliveries exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 16 OR "tblClaimServices"."RejectionReason" = 16 THEN 'Maximum number of provisions of item/service exceeded'
-    WHEN "tblClaimItems"."RejectionReason" = 17 THEN 'Item cannot be covered within waiting period'
-    WHEN "tblClaimServices"."RejectionReason" = 17 THEN 'Service cannot be covered within waiting period'
-    WHEN "tblClaimItems"."RejectionReason" = 18 OR "tblClaimServices"."RejectionReason" = 18 THEN 'N/A'
-    WHEN "tblClaimItems"."RejectionReason" = 19 OR "tblClaimServices"."RejectionReason" = 19 THEN 'Maximum number of antenatal contacts exceeded'
-    ELSE 'Unknown'
-  END AS "Rejection Reason",
-  CASE
-    WHEN "tblClaim"."RunID" IS NOT NULL THEN 'Yes'
-    ELSE 'No'
-  END AS "Paid"
-FROM "tblClaim"
-JOIN "tblHF" ON "tblClaim"."HFID" = "tblHF"."HfID"
-JOIN "tblLocations" AS "district_locations" ON "tblHF"."LocationId" = "district_locations"."LocationId"
-JOIN "tblLocations" AS "region_locations" ON "district_locations"."ParentLocationId" = "region_locations"."LocationId"
-JOIN "tblInsuree" ON "tblClaim"."InsureeID" = "tblInsuree"."InsureeID"
-JOIN "tblICDCodes" ON "tblClaim"."ICDID" = "tblICDCodes"."ICDID"
-LEFT JOIN "tblClaimItems" ON "tblClaim"."ClaimID" = "tblClaimItems"."ClaimID"
-LEFT JOIN "tblClaimServices" ON "tblClaim"."ClaimID" = "tblClaimServices"."ClaimID"
-LEFT JOIN "tblItems" ON "tblClaimItems"."ClaimItemID" = "tblItems"."ItemID"
-LEFT JOIN "tblServices" ON "tblClaimServices"."ServiceID" = "tblServices"."ServiceID"
-WHERE
-  "district_locations"."LocationType" = 'D'
-  AND "region_locations"."LocationType" = 'R'
-  AND "tblClaim"."ValidityTo" IS NULL
-  AND "tblHF"."ValidityTo" IS NULL
-  AND "tblInsuree"."ValidityTo" IS NULL
-  AND "tblICDCodes"."ValidityTo" IS NULL
-  AND "tblClaimItems"."ValidityTo" IS NULL
-  AND "tblClaimServices"."ValidityTo" IS NULL
-  AND "district_locations"."ValidityTo" IS NULL
-  AND "region_locations"."ValidityTo" IS NULL
-  AND "tblItems"."ValidityTo" IS NULL
-  AND "tblServices"."ValidityTo" IS NULL
-GROUP BY
-  "region_locations"."LocationName",
-  "district_locations"."LocationName",
-  "tblHF"."HFName",
-  "tblClaim"."DateClaimed", 
-  "tblInsuree"."Gender",
-  "tblClaim"."ClaimStatus",
-  "tblICDCodes"."ICDName",
-  "tblClaimItems"."RejectionReason",
-  "tblClaimServices"."RejectionReason",
-  "tblClaim"."RunID",
-  "tblItems"."ItemName",
-  "tblServices"."ServName",
-  "tblClaim"."RejectionReason"
-"""
-
 SUPERSET_TABLE_ENROLLMENTS = "openimis-dataset-enrollments"
 SUPERSET_TABLE_PAYMENTS = "openimis-dataset-payments"
 SUPERSET_TABLE_POPULATION = "openimis-dataset-population"
@@ -308,6 +106,8 @@ LABEL_CLAIM_GENERAL_NUMBER_ITEMS_APPROVED = "Number of Approved Items"
 LABEL_CLAIM_GENERAL_NUMBER_SERVICES = "Number of Services"
 LABEL_CLAIM_GENERAL_NUMBER_SERVICES_REJECTED = "Number of Rejected Services"
 LABEL_CLAIM_GENERAL_NUMBER_SERVICES_APPROVED = "Number of Approved Services"
+LABEL_CLAIM_GENERAL_CLAIM_TYPE = "Claim Type"
+LABEL_CLAIM_GENERAL_PATIENT_TYPE = "Patient Type"
 LABELS_FOR_GENERAL_CLAIMS = [
     LABEL_CLAIM_GENERAL_HF,
     LABEL_CLAIM_GENERAL_HF_LGA,
@@ -331,6 +131,8 @@ LABELS_FOR_GENERAL_CLAIMS = [
     LABEL_CLAIM_GENERAL_NUMBER_SERVICES,
     LABEL_CLAIM_GENERAL_NUMBER_SERVICES_REJECTED,
     LABEL_CLAIM_GENERAL_NUMBER_SERVICES_APPROVED,
+    LABEL_CLAIM_GENERAL_CLAIM_TYPE,
+    LABEL_CLAIM_GENERAL_PATIENT_TYPE,
 ]
 
 LABEL_CLAIM_DETAILS_NAME = "Name"
@@ -415,6 +217,17 @@ POLICY_STATUSES = {
     Policy.STATUS_ACTIVE: "Active",
     Policy.STATUS_EXPIRED: "Expired",
     Policy.STATUS_SUSPENDED: "Suspended",
+}
+
+CLAIM_TYPES = {
+    "E": "Emergency",
+    "R": "Referral",
+    "O": "Other",
+}
+
+PATIENT_TYPES = {
+    "O": "Outpatient",
+    "I": "Inpatient",
 }
 
 CLAIM_STATUSES = {
@@ -703,8 +516,9 @@ def process_general_claim_data(hf_information: dict, product_info: dict, icd_inf
                 product_name = find_product_name(product_info, claim, claim_items, claim_services)
                 total_items, approved_items, rejected_items = count_detail_detail(claim_items)
                 total_services, approved_services, rejected_services = count_detail_detail(claim_services)
+                patient_type = "O" if (not claim.date_to) or (claim.date_to != claim.date_from) else "I"
                 data.append([
-                    # Mind the order here, based on the order in LABELS_FOR_ECRVS
+                    # Mind the order here, based on the order in LABELS_FOR_GENERAL_CLAIMS
                     hf_information[claim.health_facility_id]["name"],  # Corresponds to LABEL_CLAIM_GENERAL_HF
                     hf_information[claim.health_facility_id]["lga"],  # Corresponds to LABEL_CLAIM_GENERAL_HF_LGA
                     f"{claim_admin.other_names} {claim_admin.last_name}",  # Corresponds to LABEL_CLAIM_GENERAL_ADMIN
@@ -730,6 +544,9 @@ def process_general_claim_data(hf_information: dict, product_info: dict, icd_inf
                     total_services,  # Corresponds to LABEL_CLAIM_GENERAL_NUMBER_SERVICES
                     rejected_services,  # Corresponds to LABEL_CLAIM_GENERAL_NUMBER_SERVICES_REJECTED
                     approved_services,  # Corresponds to LABEL_CLAIM_GENERAL_NUMBER_SERVICES_APPROVED
+
+                    CLAIM_TYPES.get(claim.visit_type, UNKNOWN),  # Corresponds to LABEL_CLAIM_GENERAL_CLAIM_TYPE
+                    PATIENT_TYPES.get(patient_type, UNKNOWN),  # Corresponds to LABEL_CLAIM_GENERAL_PATIENT_TYPE
                 ])
 
             # Writing
